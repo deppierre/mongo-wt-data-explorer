@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import re
 import subprocess
 import binascii
@@ -5,12 +7,9 @@ import bson
 import sys
 import pprint
 
-
-wt_path = ""
+wt_path = "/usr/local/bin/wt"
 ksdecode_path = ""
-data_path = ""
 timestamp = None
-
 
 def prompt_timestamp():
     global timestamp
@@ -112,28 +111,14 @@ def dump_write(
     def run_extra(write, key, value):
         extra(write, key, value)
 
-    file = input("File to write (leave empty to print): ")
-    if file:
-        with open(file, "w") as f:
-            process_dump(
-                dump_ident,
-                lambda key: write_key(f.write, key),
-                lambda value: write_value(f.write, value),
-                lambda key, value: run_extra(f.write, key, value),
-            )
-    else:
-
-        def print_without_newline(value):
-            print(value, end="")
-
-        process_dump(
-            dump_ident,
-            lambda key: write_key(print_without_newline, key),
-            lambda value: write_value(print_without_newline, value),
-            lambda key, value: run_extra(print_without_newline, key, value),
-        )
-
-    dump_ident.wait()
+    def print_without_newline(value):
+        print(value, end="")
+    process_dump(
+        dump_ident,
+        lambda key: write_key(print_without_newline, key),
+        lambda value: write_value(print_without_newline, value),
+        lambda key, value: run_extra(print_without_newline, key, value),
+    )
 
 
 def decode_to_bson(data):
@@ -279,53 +264,68 @@ def load_catalog():
 
     return entries
 
+# while True:
+#     timestamp_msg = timestamp_str()
+#     header_width = max(len(catalog_msg), len(timestamp_msg))
 
-if not wt_path:
-    wt_path = input("Path to wt: ")
-if not ksdecode_path:
-    ksdecode_path = input("Path to ksdecode (optional): ")
-if not data_path:
-    data_path = input("Path to data files: ")
-if not timestamp:
-    prompt_timestamp()
+#     print("*" * header_width)
+#     print(catalog_msg)
+#     if timestamp_msg:
+#         print(timestamp_msg)
+#     print("*" * header_width)
+#     print("(d) dump catalog")
+#     print("(t) timestamp change")
+#     print("(q) quit")
+
+#     for i, entry in enumerate(entries):
+#         print(("({}) {}").format(i, entry["ns"]))
+
+#     # cmd = input("Choose something to do: ")
+
+#     elif cmd == "t":
+#         old_timestamp = timestamp
+#         prompt_timestamp()
+
+#         if timestamp != old_timestamp:
+#             entries = load_catalog()
+
+#     elif cmd == "q":
+#         sys.exit(0)
+
+#     elif cmd.isnumeric() and int(cmd) < len(entries):
+#         explore_collection(entries[int(cmd)])
+
+#     else:
+#         print("Unrecognized command " + cmd)
+
+try:
+    if(sys.argv[1]):
+        data_path = sys.argv[1]
+        print(("Data path is {}").format(data_path))
+    if(sys.argv[2]):
+        cmd = sys.argv[2]
+        print(("Command is {}").format(cmd))
+except IndexError:
+    if data_path:
+        print("Command is missing")
+        cmd = "dump_catalog"
+    else:
+        print("Path is missing")
+        quit()
+
+# if not timestamp:
+#     prompt_timestamp()
 
 entries = load_catalog()
 
-catalog_msg = "Catalog"
+if cmd == "dump_catalog":
+    dump_write("_mdb_catalog", decode_value=format_to_bson)
 
-while True:
-    timestamp_msg = timestamp_str()
-    header_width = max(len(catalog_msg), len(timestamp_msg))
-
-    print("*" * header_width)
-    print(catalog_msg)
-    if timestamp_msg:
-        print(timestamp_msg)
-    print("*" * header_width)
-    print("(d) dump catalog")
-    print("(t) timestamp change")
-    print("(q) quit")
-
-    for i, entry in enumerate(entries):
-        print("(" + str(i) + ") " + entry["ns"])
-
-    cmd = input("Choose something to do: ")
-
-    if cmd == "d":
-        dump_write("_mdb_catalog", decode_value=format_to_bson)
-
-    elif cmd == "t":
-        old_timestamp = timestamp
-        prompt_timestamp()
-
-        if timestamp != old_timestamp:
-            entries = load_catalog()
-
-    elif cmd == "q":
-        sys.exit(0)
-
-    elif cmd.isnumeric() and int(cmd) < len(entries):
-        explore_collection(entries[int(cmd)])
-
-    else:
-        print("Unrecognized command " + cmd)
+if "collection" in cmd:
+    print(("read Collection {}").format(cmd))
+    for entry in entries:
+        if entry["ns"] == cmd:
+            print(("{}").format(entry["ns"]))
+            explore_collection(entry)
+    # explore_collection
+    # dump_write(entry["ident"], decode_value=format_to_bson)
