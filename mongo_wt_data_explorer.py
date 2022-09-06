@@ -184,56 +184,6 @@ def explore_index(entry, index, position):
     dump_write(entry["idxIdent"][index], extra=write_decoded_key,file=index_file)
     print(("->New output file created ({})").format(index_file))
 
-
-def explore_collection(entry):
-    collection_msg = "Collection " + entry["ns"]
-    timestamp_msg = timestamp_str()
-    header_width = max(len(collection_msg), len(timestamp_msg))
-
-    indexes = []
-    if "idxIdent" in entry:
-        for index in entry["idxIdent"]:
-            indexes.append(index)
-
-    while True:
-        print("*" * header_width)
-        print(collection_msg)
-        if timestamp_msg:
-            print(timestamp_msg)
-        print("*" * header_width)
-        print("(b) back")
-        print("(c) catalog entry")
-        print("(d) dump collection")
-        print("(i) ident")
-        print("(q) quit")
-
-        for i, index in enumerate(indexes):
-            print("(" + str(i) + ") " + index)
-
-        cmd = input("Choose something to do: ")
-
-        if cmd == "b":
-            return
-
-        elif cmd == "c":
-            print(pprint.pformat(entry))
-
-        elif cmd == "d":
-            dump_write(entry["ident"], decode_value=format_to_bson)
-
-        elif cmd == "i":
-            print(entry["ident"])
-
-        elif cmd == "q":
-            sys.exit(0)
-
-        elif cmd.isnumeric() and int(cmd) < len(entries):
-            explore_index(entry, indexes[int(cmd)], int(cmd))
-
-        else:
-            print("Unrecognized command " + cmd)
-
-
 def load_catalog():
     entries = []
 
