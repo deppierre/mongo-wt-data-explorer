@@ -6,10 +6,12 @@ import binascii
 import bson
 import sys
 import pprint
+import datetime
 
 wt_path = "/usr/local/bin/wt"
 ksdecode_path = ""
 timestamp = None
+time_now  = datetime.datetime.now().strftime('%m%d%Y%H%M%S') 
 
 def prompt_timestamp():
     global timestamp
@@ -99,6 +101,7 @@ def dump_write(
     decode_key=lambda key: key,
     decode_value=lambda value: value,
     extra=lambda write, key, value: None,
+    file=""
 ):
     dump_ident = dump(ident)
 
@@ -111,14 +114,23 @@ def dump_write(
     def run_extra(write, key, value):
         extra(write, key, value)
 
-    def print_without_newline(value):
-        print(value, end="")
-    process_dump(
-        dump_ident,
-        lambda key: write_key(print_without_newline, key),
-        lambda value: write_value(print_without_newline, value),
-        lambda key, value: run_extra(print_without_newline, key, value),
-    )
+    if file:
+        with open(file, "w") as f:
+            process_dump(
+                dump_ident,
+                lambda key: write_key(f.write, key),
+                lambda value: write_value(f.write, value),
+                lambda key, value: run_extra(f.write, key, value),
+            )
+    else:
+        def print_without_newline(value):
+            print(value, end="")  
+        process_dump(
+            dump_ident,
+            lambda key: write_key(print_without_newline, key),
+            lambda value: write_value(print_without_newline, value),
+            lambda key, value: run_extra(print_without_newline, key, value),
+        )
 
 
 def decode_to_bson(data):
@@ -139,69 +151,38 @@ def explore_index(entry, index, position):
     timestamp_msg = timestamp_str()
     header_width = max(len(collection_msg), len(index_msg), len(timestamp_msg))
 
-    while True:
-        print("*" * header_width)
-        print(collection_msg)
-        print(index_msg)
-        if timestamp_msg:
-            print(timestamp_msg)
-        print("*" * header_width)
-        print("(b) back")
-        print("(c) catalog entry")
-        print("(d) dump index")
-        print("(i) ident")
-        print("(q) quit")
 
-        def get_catalog_entry():
-            return entry["md"]["indexes"][position]
+    def get_catalog_entry():
+        return entry["md"]["indexes"][position]
 
-        cmd = input("Choose something to do: ")
-
-        if cmd == "b":
+    def write_decoded_key(write, key, value):
+        if not ksdecode_path:
             return
+        if index == "_id_":
+            key += value[:4]
+            value = value[-2:]
+        ksdecode = subprocess.run(
+            [
+                ksdecode_path,
+                "-o",
+                "bson",
+                "-p",
+                pprint.pformat(get_catalog_entry()["spec"]["key"]),
+                "-t",
+                value,
+                "-r",
+                "string"
+                if "clusteredIndex" in entry["md"]["options"]
+                else "long",
+                key,
+            ],
+            capture_output=True,
+        )
+        write("Decoded:\n\t" + ksdecode.stdout.decode("utf-8").strip() + "\n")
 
-        elif cmd == "c":
-            print(pprint.pformat(get_catalog_entry()))
-
-        elif cmd == "d":
-
-            def write_decoded_key(write, key, value):
-                if not ksdecode_path:
-                    return
-
-                if index == "_id_":
-                    key += value[:4]
-                    value = value[-2:]
-
-                ksdecode = subprocess.run(
-                    [
-                        ksdecode_path,
-                        "-o",
-                        "bson",
-                        "-p",
-                        pprint.pformat(get_catalog_entry()["spec"]["key"]),
-                        "-t",
-                        value,
-                        "-r",
-                        "string"
-                        if "clusteredIndex" in entry["md"]["options"]
-                        else "long",
-                        key,
-                    ],
-                    capture_output=True,
-                )
-                write("Decoded:\n\t" + ksdecode.stdout.decode("utf-8").strip() + "\n")
-
-            dump_write(entry["idxIdent"][index], extra=write_decoded_key)
-
-        elif cmd == "i":
-            print(entry["idxIdent"][index])
-
-        elif cmd == "q":
-            sys.exit(0)
-
-        else:
-            print("Unrecognized command " + cmd)
+    index_file = "{}_{}.json".format(time_now,entry["idxIdent"][index])
+    dump_write(entry["idxIdent"][index], extra=write_decoded_key,file=index_file)
+    print(("->New output file created ({})").format(index_file))
 
 
 def explore_collection(entry):
@@ -264,68 +245,40 @@ def load_catalog():
 
     return entries
 
-# while True:
-#     timestamp_msg = timestamp_str()
-#     header_width = max(len(catalog_msg), len(timestamp_msg))
-
-#     print("*" * header_width)
-#     print(catalog_msg)
-#     if timestamp_msg:
-#         print(timestamp_msg)
-#     print("*" * header_width)
-#     print("(d) dump catalog")
-#     print("(t) timestamp change")
-#     print("(q) quit")
-
-#     for i, entry in enumerate(entries):
-#         print(("({}) {}").format(i, entry["ns"]))
-
-#     # cmd = input("Choose something to do: ")
-
-#     elif cmd == "t":
-#         old_timestamp = timestamp
-#         prompt_timestamp()
-
-#         if timestamp != old_timestamp:
-#             entries = load_catalog()
-
-#     elif cmd == "q":
-#         sys.exit(0)
-
-#     elif cmd.isnumeric() and int(cmd) < len(entries):
-#         explore_collection(entries[int(cmd)])
-
-#     else:
-#         print("Unrecognized command " + cmd)
-
 try:
     if(sys.argv[1]):
         data_path = sys.argv[1]
-        print(("Data path is {}").format(data_path))
+        print(("Data path : {}").format(data_path))
+        entries = load_catalog()
     if(sys.argv[2]):
-        cmd = sys.argv[2]
-        print(("Command is {}").format(cmd))
+        myColl = sys.argv[2]
+        for entry in entries:
+            if entry["md"]["ns"] == myColl:
+                print(("Read collection: {}").format(myColl))
+                try:
+                    if sys.argv[3]:
+                        pass
+                except IndexError: 
+                        collection_file = "{}_{}.json".format(time_now,entry["ns"])
+                        dump_write(entry["ident"], decode_value=format_to_bson,file=collection_file)
+                        print(("->New output file created ({})").format(collection_file))
+                break
+        else:
+            raise Exception("Collection is unknown")
+    if(sys.argv[3]):
+        myIndex = sys.argv[3]
+        
+        for k,v in enumerate(entry["md"]["indexes"]):
+            if v["spec"]["name"] == myIndex:
+                explore_index(entry, myIndex, k)
+                break
+        else:
+            raise Exception("Index is unknown")
 except IndexError:
-    if data_path:
-        print("Command is missing")
-        cmd = "dump_catalog"
-    else:
+    if not data_path:
         print("Path is missing")
         quit()
-
-# if not timestamp:
-#     prompt_timestamp()
-
-entries = load_catalog()
-
-if cmd == "dump_catalog":
-    dump_write("_mdb_catalog", decode_value=format_to_bson)
-
-if "collection" in cmd:
-    print(("read Collection {}").format(cmd))
-    for entry in entries:
-        if entry["ns"] == cmd:
-            print(("{}").format(entry["ns"]))
-            explore_collection(entry)
-    # explore_collection
-    # dump_write(entry["ident"], decode_value=format_to_bson)
+    if len(sys.argv) == 2:
+        print("Collection list:")
+        for index in entries: 
+            for k,v in index["idxIdent"].items(): print(("    {} {} {} {}").format(index["md"]["ns"],index["ident"],k,v,))
